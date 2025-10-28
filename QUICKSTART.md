@@ -71,20 +71,43 @@ Open the video file to review it!
 
 1. **Create Google Cloud Project:**
    - Go to https://console.cloud.google.com/
-   - Create new project
-   - Enable "YouTube Data API v3"
+   - Click "Select a project" → "New Project"
+   - Enter project name (e.g., "viral-video-bot")
+   - Click "Create"
 
-2. **Create OAuth Credentials:**
-   - Go to "Credentials" → "Create Credentials" → "OAuth client ID"
-   - Choose "Desktop app"
-   - Download JSON as `client_secret.json`
+2. **Enable YouTube Data API v3:**
+   - In your project, go to "APIs & Services" → "Library"
+   - Search for "YouTube Data API v3"
+   - Click on it and press "Enable"
+
+3. **Configure OAuth Consent Screen:**
+   - Go to "APIs & Services" → "OAuth consent screen"
+   - Choose "External" user type
+   - Fill in required fields:
+     - App name: "Viral Video Bot"
+     - User support email: your email
+     - Developer contact: your email
+   - Click "Save and Continue"
+   - Skip scopes for now, click "Save and Continue"
+   - Add your email as test user
+   - Click "Save and Continue"
+
+4. **Create OAuth Credentials:**
+   - Go to "APIs & Services" → "Credentials"
+   - Click "Create Credentials" → "OAuth client ID"
+   - Choose application type: "Desktop app"
+   - Name it: "Video Bot Desktop"
+   - Click "Create"
+   - Download the JSON file
+   - Rename it to `client_secret.json`
    - Place in project root directory
 
-3. **First Upload:**
+5. **First Upload:**
    ```bash
    python main.py
    ```
    - Browser will open for authentication
+   - Sign in with your Google account
    - Allow access to your YouTube channel
    - Token saved for future uploads
 

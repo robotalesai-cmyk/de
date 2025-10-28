@@ -282,11 +282,25 @@ logging.basicConfig(level=logging.DEBUG)
 
 ### Test Individual Components
 ```bash
-# Test content generation only
-python -c "from src.content_generator import ContentGenerator; import os; os.environ['OPENAI_API_KEY']='your_key'; gen = ContentGenerator(); print(gen._generate_hashtags('motivational'))"
+# Test content generation
+python -c "
+from src.content_generator import ContentGenerator
+import os
+os.environ['OPENAI_API_KEY']='your_key'
+gen = ContentGenerator()
+print(gen._generate_hashtags('motivational'))
+"
 
 # Test video creator
-python -c "from src.video_creator import VideoCreator; from pathlib import Path; vc = VideoCreator(Path('./output')); print(vc._get_random_gradient_color())"
+python -c "
+from src.video_creator import VideoCreator
+from pathlib import Path
+vc = VideoCreator(Path('./output'))
+print(vc._get_random_gradient_color())
+"
+
+# Or use the demo script for comprehensive testing
+python demo.py
 ```
 
 ### Check Dependencies
