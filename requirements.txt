@@ -1,0 +1,29 @@
+# Core dependencies
+openai>=1.0.0
+python-dotenv>=1.0.0
+moviepy>=1.0.3
+Pillow>=10.0.0
+requests>=2.31.0
+
+# Video processing
+opencv-python>=4.8.0
+numpy>=1.24.0
+
+# Social media APIs
+google-auth>=2.23.0
+google-auth-oauthlib>=1.1.0
+google-auth-httplib2>=0.1.1
+google-api-python-client>=2.100.0
+TikTokApi>=6.0.0
+
+# Audio processing
+pydub>=0.25.1
+gtts>=2.4.0
+
+# Utilities
+pyyaml>=6.0
+schedule>=1.2.0
+
+# Testing
+pytest>=7.4.0
+pytest-mock>=3.12.0
