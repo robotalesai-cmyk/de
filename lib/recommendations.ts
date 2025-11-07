@@ -7,6 +7,17 @@
 
 import { prisma } from './prisma';
 
+// Scoring constants for the recommendation algorithm
+const SCORING_WEIGHTS = {
+  EFFECT_MATCH: 10,           // Points per matching effect * intensity
+  CONDITION_MATCH: 15,         // Points per matching condition * efficacy (higher weight for medical needs)
+  THC_COMPLIANCE: 20,          // Bonus for staying within THC limit
+  THC_VIOLATION_PENALTY: 30,   // Penalty for exceeding max THC
+  CBD_COMPLIANCE: 25,          // Bonus for meeting minimum CBD requirement
+  GENETICS_MATCH: 15,          // Bonus for matching genetics preference
+  AVAILABILITY_PER_PHARMACY: 5 // Bonus points per pharmacy that has the strain
+} as const;
+
 export interface UserPreferences {
   preferredEffects?: string[];
   conditions?: string[];
@@ -83,7 +94,7 @@ export async function rankStrains(
       if (preferences.preferredEffects?.length) {
         strain.effects.forEach(se => {
           if (preferences.preferredEffects!.includes(se.effect.name)) {
-            score += se.intensity * 10;
+            score += se.intensity * SCORING_WEIGHTS.EFFECT_MATCH;
             matchingEffects.push(se.effect.name);
           }
         });
@@ -93,7 +104,7 @@ export async function rankStrains(
       if (preferences.conditions?.length) {
         strain.conditions.forEach(sc => {
           if (preferences.conditions!.includes(sc.condition.name)) {
-            score += sc.efficacy * 15; // Higher weight for medical conditions
+            score += sc.efficacy * SCORING_WEIGHTS.CONDITION_MATCH;
             matchingConditions.push(sc.condition.name);
           }
         });
@@ -102,26 +113,26 @@ export async function rankStrains(
       // Score based on THC/CBD preferences
       if (preferences.maxThc !== undefined && strain.thcContent !== null) {
         if (strain.thcContent <= preferences.maxThc) {
-          score += 20;
+          score += SCORING_WEIGHTS.THC_COMPLIANCE;
         } else {
-          score -= 30; // Penalty for exceeding max THC
+          score -= SCORING_WEIGHTS.THC_VIOLATION_PENALTY;
         }
       }
 
       if (preferences.minCbd !== undefined && strain.cbdContent !== null) {
         if (strain.cbdContent >= preferences.minCbd) {
-          score += 25;
+          score += SCORING_WEIGHTS.CBD_COMPLIANCE;
         }
       }
 
       // Score based on genetics preference
       if (preferences.genetics && strain.genetics === preferences.genetics) {
-        score += 15;
+        score += SCORING_WEIGHTS.GENETICS_MATCH;
       }
 
       // Bonus for availability
       if (strain.pharmacies.length > 0) {
-        score += strain.pharmacies.length * 5;
+        score += strain.pharmacies.length * SCORING_WEIGHTS.AVAILABILITY_PER_PHARMACY;
       }
 
       return {

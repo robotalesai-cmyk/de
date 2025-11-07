@@ -9,6 +9,13 @@
 
 import { prisma } from './prisma';
 
+// Price range constants for medical cannabis in Germany (in EUR)
+// Based on typical pharmacy pricing as of 2024
+const PRICE_RANGE = {
+  MIN: 150,  // Minimum price per prescription unit
+  MAX: 350   // Maximum price per prescription unit
+} as const;
+
 export interface StrainData {
   name: string;
   thcContent?: number;
@@ -223,7 +230,7 @@ export async function seedDatabase() {
           pharmacyId: pharmacy.id,
           strainId: strain.id,
           inStock: true,
-          price: Math.random() * 200 + 100 // Random price between 100-300
+          price: Math.random() * (PRICE_RANGE.MAX - PRICE_RANGE.MIN) + PRICE_RANGE.MIN
         }
       });
     }

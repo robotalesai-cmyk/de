@@ -119,6 +119,10 @@ export default function StrainFinder() {
     );
   }
 
+  // Determine if search button should be disabled
+  const hasNoSelection = selectedEffects.length === 0 && selectedConditions.length === 0;
+  const isSearchDisabled = loading || hasNoSelection;
+
   return (
     <div className="space-y-6">
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
@@ -245,7 +249,7 @@ export default function StrainFinder() {
           {/* Search Button */}
           <button
             onClick={handleSearch}
-            disabled={loading || (selectedEffects.length === 0 && selectedConditions.length === 0)}
+            disabled={isSearchDisabled}
             className="w-full bg-green-600 text-white py-3 px-6 rounded-lg font-semibold hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
           >
             {loading ? 'Suche läuft...' : 'Empfehlungen finden'}
