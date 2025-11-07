@@ -5,6 +5,9 @@ export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const search = searchParams.get('search') || '';
+    if (search.length > 100) {
+      return NextResponse.json({ error: 'Search term too long' }, { status: 400 });
+    }
 
     const strains = await prisma.strain.findMany({
       where: search
