@@ -1,0 +1,127 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Cannabis Strains (Sorten)
+model Strain {
+  id          String   @id @default(cuid())
+  name        String
+  thcContent  Float?   // THC percentage
+  cbdContent  Float?   // CBD percentage
+  description String?  @db.Text
+  genetics    String?  // Indica/Sativa/Hybrid
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  effects     StrainEffect[]
+  conditions  StrainCondition[]
+  pharmacies  PharmacyStrain[]
+  
+  @@index([name])
+}
+
+// Pharmacies (Apotheken)
+model Pharmacy {
+  id        String   @id @default(cuid())
+  name      String
+  address   String?
+  city      String?
+  postalCode String?
+  phone     String?
+  email     String?
+  website   String?
+  latitude  Float?
+  longitude Float?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  strains   PharmacyStrain[]
+  
+  @@index([city])
+  @@index([postalCode])
+}
+
+// Junction table for Pharmacy-Strain relationship
+model PharmacyStrain {
+  id          String    @id @default(cuid())
+  pharmacyId  String
+  strainId    String
+  inStock     Boolean   @default(true)
+  price       Float?
+  lastUpdated DateTime  @default(now())
+  
+  pharmacy    Pharmacy  @relation(fields: [pharmacyId], references: [id], onDelete: Cascade)
+  strain      Strain    @relation(fields: [strainId], references: [id], onDelete: Cascade)
+  
+  @@unique([pharmacyId, strainId])
+  @@index([pharmacyId])
+  @@index([strainId])
+}
+
+// Effects (Wirkungen)
+model Effect {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  category    String?  // e.g., "positive", "negative", "medical"
+  description String?  @db.Text
+  
+  strains     StrainEffect[]
+}
+
+// Junction table for Strain-Effect relationship
+model StrainEffect {
+  id        String @id @default(cuid())
+  strainId  String
+  effectId  String
+  intensity Int    @default(5) // 1-10 scale
+  
+  strain    Strain @relation(fields: [strainId], references: [id], onDelete: Cascade)
+  effect    Effect @relation(fields: [effectId], references: [id], onDelete: Cascade)
+  
+  @@unique([strainId, effectId])
+  @@index([strainId])
+  @@index([effectId])
+}
+
+// Medical Conditions (Beschwerden)
+model Condition {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?  @db.Text
+  
+  strains     StrainCondition[]
+}
+
+// Junction table for Strain-Condition relationship
+model StrainCondition {
+  id          String @id @default(cuid())
+  strainId    String
+  conditionId String
+  efficacy    Int    @default(5) // 1-10 scale
+  
+  strain      Strain    @relation(fields: [strainId], references: [id], onDelete: Cascade)
+  condition   Condition @relation(fields: [conditionId], references: [id], onDelete: Cascade)
+  
+  @@unique([strainId, conditionId])
+  @@index([strainId])
+  @@index([conditionId])
+}
+
+// User preferences for recommendations
+model UserPreference {
+  id          String   @id @default(cuid())
+  sessionId   String   @unique
+  preferences String   @db.Text // JSON string with user preferences
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
