@@ -14,7 +14,7 @@ Diese Anwendung wurde entwickelt, um Patienten und medizinisches Fachpersonal be
 
 ## Technologie-Stack
 
-- **Frontend**: Next.js 16, React 19, TypeScript
+- **Frontend**: Next.js 16, React 19 (latest stable), TypeScript
 - **Styling**: Tailwind CSS
 - **Backend**: Next.js API Routes
 - **Datenbank**: PostgreSQL mit Prisma ORM

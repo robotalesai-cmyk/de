@@ -6,7 +6,7 @@ A German-language web application for finding and filtering medical cannabis str
 ## Completed Features
 
 ### 1. Core Application Structure
-- ✅ Next.js 16 with TypeScript
+- ✅ Next.js 16 (latest) with TypeScript
 - ✅ Tailwind CSS for responsive styling
 - ✅ German language throughout the interface
 - ✅ Production-ready build configuration
@@ -78,8 +78,8 @@ A German-language web application for finding and filtering medical cannabis str
 ## Technical Stack
 
 ### Frontend
-- Next.js 16 (App Router)
-- React 19
+- Next.js 16 (App Router) - latest stable
+- React 19 - latest stable
 - TypeScript 5
 - Tailwind CSS 4
 

@@ -189,33 +189,45 @@ export async function seedDatabase() {
 
     // Link effects
     if (strainData.effects) {
-      for (const effectName of strainData.effects) {
-        const effect = effectRecords.find(e => e.name === effectName);
-        if (effect) {
-          await prisma.strainEffect.create({
-            data: {
-              strainId: strain.id,
-              effectId: effect.id,
-              intensity: 7
-            }
-          });
-        }
+      const effectLinks = strainData.effects
+        .map(effectName => {
+          const effect = effectRecords.find(e => e.name === effectName);
+          return effect
+            ? {
+                strainId: strain.id,
+                effectId: effect.id,
+                intensity: 7
+              }
+            : null;
+        })
+        .filter((link): link is { strainId: string; effectId: string; intensity: number } => link !== null);
+      
+      if (effectLinks.length > 0) {
+        await prisma.strainEffect.createMany({
+          data: effectLinks
+        });
       }
     }
 
     // Link conditions
     if (strainData.conditions) {
-      for (const conditionName of strainData.conditions) {
-        const condition = conditionRecords.find(c => c.name === conditionName);
-        if (condition) {
-          await prisma.strainCondition.create({
-            data: {
-              strainId: strain.id,
-              conditionId: condition.id,
-              efficacy: 7
-            }
-          });
-        }
+      const conditionLinks = strainData.conditions
+        .map(conditionName => {
+          const condition = conditionRecords.find(c => c.name === conditionName);
+          return condition
+            ? {
+                strainId: strain.id,
+                conditionId: condition.id,
+                efficacy: 7
+              }
+            : null;
+        })
+        .filter((link): link is { strainId: string; conditionId: string; efficacy: number } => link !== null);
+      
+      if (conditionLinks.length > 0) {
+        await prisma.strainCondition.createMany({
+          data: conditionLinks
+        });
       }
     }
 
@@ -224,14 +236,14 @@ export async function seedDatabase() {
       .sort(() => Math.random() - 0.5)
       .slice(0, Math.floor(Math.random() * 2) + 1);
 
-    for (const pharmacy of randomPharmacies) {
-      await prisma.pharmacyStrain.create({
-        data: {
+    if (randomPharmacies.length > 0) {
+      await prisma.pharmacyStrain.createMany({
+        data: randomPharmacies.map(pharmacy => ({
           pharmacyId: pharmacy.id,
           strainId: strain.id,
           inStock: true,
           price: Math.random() * (PRICE_RANGE.MAX - PRICE_RANGE.MIN) + PRICE_RANGE.MIN
-        }
+        }))
       });
     }
   }

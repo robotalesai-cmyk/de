@@ -5,6 +5,8 @@ services:
     image: postgres:16-alpine
     container_name: cannabis-pharmacy-db
     environment:
+      # WARNING: The following credentials are hardcoded for local development only.
+      # Do NOT use these credentials in production. Use secrets management or environment variables instead.
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: password
       POSTGRES_DB: cannabis_pharmacy
