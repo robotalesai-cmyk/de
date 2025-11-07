@@ -5,6 +5,9 @@ export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const city = searchParams.get('city') || '';
+    if (city.length > 100) {
+      return NextResponse.json({ error: 'City name too long' }, { status: 400 });
+    }
 
     const pharmacies = await prisma.pharmacy.findMany({
       where: city
