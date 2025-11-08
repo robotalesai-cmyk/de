@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import yaml
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, PrivateAttr, validator
 
 
 class SymbolConfig(BaseModel):
@@ -89,18 +89,21 @@ class StrategyConfig(BaseModel):
     venues_config: str
     storage: StorageConfig
     metrics: MetricsConfig
+    _base_path: Path = PrivateAttr(default=Path.cwd())
 
     @classmethod
     def load(cls, path: str | Path) -> "StrategyConfig":
         cfg_path = Path(path)
         with cfg_path.open("r", encoding="utf-8") as handle:
             data: Dict[str, Any] = yaml.safe_load(handle)
-        return cls.model_validate(data)
+        config = cls.model_validate(data)
+        config._base_path = cfg_path.parent.resolve()
+        return config
 
     def load_venues(self) -> Dict[str, Any]:
         venues_path = Path(self.venues_config)
         if not venues_path.is_absolute():
-            venues_path = Path(__file__).resolve().parents[3] / venues_path
+            venues_path = (self._base_path / venues_path).resolve()
         with venues_path.open("r", encoding="utf-8") as handle:
             return yaml.safe_load(handle)
 
