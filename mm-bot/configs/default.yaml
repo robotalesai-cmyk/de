@@ -1,0 +1,49 @@
+symbols:
+  - name: BTC-PERP
+    venue: kucoin
+    tick_size: 0.5
+    lot_size: 0.001
+    max_order_notional: 5000
+    max_position: 0.5
+    hedge_ratio: 1.0
+    basis_capture: true
+  - name: BTC-USDT
+    venue: kucoin
+    tick_size: 0.01
+    lot_size: 0.001
+    max_order_notional: 5000
+    max_position: 0.5
+risk:
+  max_drawdown: 0.05
+  max_daily_loss: 0.02
+  max_inventory_notional: 10000
+  kill_switch_threshold: 5
+latency_budget_ms: 300
+quote:
+  model: avellaneda_stoikov
+  gamma: 0.1
+  horizon_seconds: 30
+  kappa: 1.5
+  min_spread: 0.5
+  refresh_seconds: 1.0
+  skew_alpha: 0.05
+inventory:
+  target: 0.0
+  soft_limit: 0.3
+  hard_limit: 0.5
+hedge:
+  enabled: true
+  rebalance_threshold: 0.05
+  max_notional: 10000
+  mode: perp
+basis:
+  enabled: true
+  max_notional: 5000
+  funding_threshold: 0.0005
+venues_config: configs/venues.yaml
+storage:
+  backend: sqlite
+  dsn: sqlite:///./mm_bot.db
+metrics:
+  host: 0.0.0.0
+  port: 9001

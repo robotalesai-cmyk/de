@@ -1,0 +1,17 @@
+version: "3.9"
+services:
+  app:
+    build: .
+    env_file: .env.example
+    command: ["poetry", "run", "bot-mm", "--config", "configs/default.yaml", "--paper"]
+    volumes:
+      - ./:/app
+    depends_on:
+      - clickhouse
+  clickhouse:
+    image: clickhouse/clickhouse-server:23
+    environment:
+      - CLICKHOUSE_DB=mm_bot
+    ports:
+      - "9000:9000"
+      - "8123:8123"
