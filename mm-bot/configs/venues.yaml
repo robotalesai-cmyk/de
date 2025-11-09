@@ -1,0 +1,15 @@
+kucoin:
+  rest_base: https://api.kucoin.com
+  ws_public: wss://ws-api.kucoin.com/endpoint
+  ws_private: wss://ws-api.kucoin.com/endpoint
+  rate_limits:
+    - type: orders
+      limit: 60
+      interval: 1
+  has_paper: true
+  funding_endpoint: https://api-futures.kucoin.com/api/v1/funding-rate
+stub_dex:
+  rest_base: https://dex.example.com/api
+  ws_public: wss://dex.example.com/ws
+  rate_limits: []
+  has_paper: false
