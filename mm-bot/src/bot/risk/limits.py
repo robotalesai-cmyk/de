@@ -14,6 +14,8 @@ from ..core.types import Fill, Order, Side
 class SymbolLimits:
     max_position: float
     max_order_notional: float
+    account_notional_cap: float
+    max_orders: int
     max_cancels_per_minute: Optional[int] = None
 
 
@@ -25,6 +27,7 @@ class RiskState:
     peak_equity: float = 0.0
     cancel_events: Dict[str, Deque[dt.datetime]] = field(default_factory=dict)
     halted_reason: Optional[str] = None
+    open_orders: Dict[str, Dict[str, float]] = field(default_factory=dict)
 
 
 class RiskLimits:
@@ -37,16 +40,19 @@ class RiskLimits:
         max_drawdown: float,
         max_daily_loss: float,
         max_inventory_notional: float,
+        max_open_orders: int,
     ) -> None:
         self._limits = limits
         self._state = RiskState(
             inventory={symbol: 0.0 for symbol in limits},
             mid_prices={symbol: 0.0 for symbol in limits},
             cancel_events={symbol: deque(maxlen=1000) for symbol in limits},
+            open_orders={symbol: {} for symbol in limits},
         )
         self._max_drawdown = max_drawdown
         self._max_daily_loss = max_daily_loss
         self._max_inventory_notional = max_inventory_notional
+        self._max_open_orders = max_open_orders
 
     @property
     def halted(self) -> bool:
@@ -75,6 +81,8 @@ class RiskLimits:
             return False
         notional = abs(order.price * order.size)
         if notional > limits.max_order_notional:
+            return False
+        if not self._can_add_order(order.symbol, notional):
             return False
         if limits.max_cancels_per_minute is not None:
             cancels = self._state.cancel_events[order.symbol]
@@ -119,6 +127,36 @@ class RiskLimits:
     def _halt(self, reason: str) -> None:
         if self._state.halted_reason is None:
             self._state.halted_reason = reason
+
+    def _can_add_order(self, symbol: str, notional: float) -> bool:
+        limits = self._limits[symbol]
+        open_orders = self._state.open_orders[symbol]
+        if len(open_orders) >= limits.max_orders:
+            return False
+        total_open = sum(len(orders) for orders in self._state.open_orders.values())
+        if total_open >= self._max_open_orders:
+            return False
+        mid = self._state.mid_prices.get(symbol, 0.0)
+        exposure = abs(self._state.inventory[symbol] * mid)
+        exposure += sum(open_orders.values()) + notional
+        if exposure > limits.account_notional_cap:
+            return False
+        return True
+
+    def register_order(self, order_id: str, order: Order) -> None:
+        notional = abs(order.price * order.size)
+        self._state.open_orders[order.symbol][order_id] = notional
+
+    def update_order_notional(self, order_id: str, symbol: str, remaining: float, price: float) -> None:
+        orders = self._state.open_orders.get(symbol, {})
+        if order_id in orders:
+            orders[order_id] = abs(remaining * price)
+
+    def remove_order(self, order_id: str, symbol: str) -> None:
+        self._state.open_orders.get(symbol, {}).pop(order_id, None)
+
+    def sync_orders(self, symbol: str, orders: Dict[str, float]) -> None:
+        self._state.open_orders[symbol] = dict(orders)
 
 
 __all__ = ["RiskLimits", "SymbolLimits"]

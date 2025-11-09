@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 
 from ..connectors.cex_ccxt import ExchangeConnector
@@ -14,6 +15,8 @@ class HedgePolicy:
     enabled: bool
     threshold: float
     max_notional: float
+    hedge_ratio: float
+    cooldown_seconds: float
 
 
 class Hedger:
@@ -30,16 +33,23 @@ class Hedger:
         self.last_notional: float = 0.0
         self._twap = TWAPExecutor(twap_slices, twap_interval)
         self._twap_slices = twap_slices
+        self._last_timestamp = 0.0
 
     async def maybe_hedge(self, snapshot: OrderBookSnapshot, inventory: float, tick_size: float, lot_size: float) -> float:
         self.last_notional = 0.0
         if not self._policy.enabled:
             return inventory
+        now = time.monotonic()
+        if now - self._last_timestamp < self._policy.cooldown_seconds:
+            return inventory
         if abs(inventory) < self._policy.threshold:
             return inventory
-        side = Side.SELL if inventory > 0 else Side.BUY
+        effective_inventory = inventory * self._policy.hedge_ratio
+        if abs(effective_inventory) < self._policy.threshold:
+            return inventory
+        side = Side.SELL if effective_inventory > 0 else Side.BUY
         price = snapshot.bid.price if side == Side.SELL else snapshot.ask.price
-        target_size = min(abs(inventory), self._policy.max_notional / max(price, tick_size))
+        target_size = min(abs(effective_inventory), self._policy.max_notional / max(price, tick_size))
         desired_size = max(target_size, lot_size)
         slices = 1 if desired_size <= self._policy.max_notional / 2 else self._twap_slices
         executed_delta = 0.0
@@ -71,4 +81,6 @@ class Hedger:
             await self._twap.execute(submit, desired_size)
         else:
             await submit(desired_size)
+        if abs(executed_delta) > 0:
+            self._last_timestamp = now
         return inventory + executed_delta

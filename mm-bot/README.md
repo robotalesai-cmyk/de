@@ -1,9 +1,9 @@
-# Kucoin Cross-Venue Market Making Bot
+# Cross-Venue Crypto Market-Making Bot
 
 ```
         +-------------------+       +-------------------+
-        |   Data Feeds      |-----> |  Signal Engines   |
-        | (Kucoin WS, L2)   |       | (micro, vol, OFI) |
+        |   Market Data     |-----> |  Signal Engines   |
+        | (CEX & DEX feeds) |       | (micro, vol, λ)   |
         +---------+---------+       +----------+--------+
                   |                            |
                   v                            v
@@ -14,80 +14,134 @@
                   |                            |
                   v                            v
         +-------------------+       +-------------------+
-        | Execution Router  |<----->| Hedger/Basis      |
-        | (SOR, TWAP, VWAP) |       | Capture           |
+        | Execution Router  |<----->| Hedge/Basis       |
+        | (SOR, TWAP/VWAP)  |       | Capture           |
         +---------+---------+       +----------+--------+
                   |                            |
                   v                            v
-        +----------------------------------------------+
-        |    Connectors (CCXT live + paper simulator)  |
-        +----------------------------------------------+
+        +-----------------------------------------------+
+        |  Connectors (CCXT venues + DEX stubs/paper)   |
+        +-----------------------------------------------+
 ```
 
 ## Overview
 
-This repository contains a production-ready template for a cross-venue crypto market-making bot targeting Kucoin and other venues. The bot combines Avellaneda–Stoikov quoting with microstructure alpha, optional basis/funding capture, and robust risk management.
+This repository contains a production-grade template for a cross-venue crypto market-making
+system written for Python 3.11. The engine combines:
+
+- Avellaneda–Stoikov quoting with microstructure adjustments (microprice, queue/order-flow
+  imbalance, short-horizon volatility, and Kyle's λ impact gating).
+- Automatic delta hedging (perp or spot) with TWAP/VWAP execution helpers.
+- Optional basis/funding capture across perp/spot or perp/perp venues.
+- Multi-venue connectors (CCXT based CEX + typed DEX stubs) wrapped in a smart order router.
+- Robust risk controls (inventory caps, drawdown, cancel rate, kill switch, orphan reaper).
+- Prometheus metrics and FastAPI health endpoint.
+- Event-driven and vectorized backtesting modes.
+
+The default configuration targets BTC across a perp + spot venue in paper trading mode. Live
+trading requires providing exchange credentials via environment variables.
 
 ## Quickstart
 
-### Local development
+### Local (Poetry)
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-pip install -e .
+pip install poetry
+poetry install
 cp .env.example .env
 poetry run pre-commit install
 ```
 
-Populate `.env` with the generic `EXCHANGE_API_*` keys or venue-specific overrides such as `KUCOIN_API_KEY` before enabling live trading.
-
-### Docker
-
-```bash
-docker compose up --build
-```
-
-### Paper Trading
+Run the bot in paper mode:
 
 ```bash
 poetry run bot-mm --config configs/default.yaml --paper
 ```
 
-### Live Trading
-
-Provide Kucoin (or other CCXT venue) API credentials via environment variables and launch without `--paper`:
+Switch to live trading by providing venue credentials (example for Kucoin):
 
 ```bash
 KUCOIN_API_KEY=... KUCOIN_API_SECRET=... KUCOIN_API_PASSPHRASE=... \
   poetry run bot-mm --config configs/default.yaml --live
 ```
 
-The connector automatically falls back to the in-memory simulator whenever credentials are absent, preventing accidental live trading.
+### Docker Compose
+
+```bash
+docker compose up --build
+```
+
+The compose stack includes ClickHouse for optional data persistence. Comment the dependency in
+`docker-compose.yml` if ClickHouse is not required.
 
 ### Backtesting
 
 ```bash
 poetry run bot-backtest --config configs/default.yaml --mode vectorized
+poetry run bot-backtest --config configs/default.yaml --mode event
 ```
+
+Both modes emit a CSV file with PnL/risk metrics and print a console summary (Sharpe, Sortino,
+turnover, hit-rate, drawdowns, capacity proxy).
 
 ## Configuration
 
-- `configs/default.yaml`: strategy parameters, symbols, risk caps, hedge policies.
-- `configs/venues.yaml`: API endpoints, rate limits, authentication flags.
-- per-symbol `max_cancels_per_minute`: optional hard cap on cancellations enforced by the risk engine.
+- `configs/default.yaml` – strategy setup: symbols, fee tiers, maker/taker flags, post-only
+  preference, account caps, inventory targets, hedge/basis policies, and risk thresholds.
+- `configs/venues.yaml` – venue metadata including REST/WS endpoints and rate-limit policies.
+- `.env.example` – environment variables for CCXT credentials and optional ClickHouse access.
+
+Runtime secrets are loaded from environment variables of the form `<VENUE>_API_KEY` with a
+generic `EXCHANGE_API_*` fallback.
+
+## Modules
+
+- `bot/core/` – configuration loading, events, typed dataclasses, metrics.
+- `bot/data/` – websocket/synthetic feeds and persistence helpers (SQLite/ClickHouse).
+- `bot/signals/` – microstructure, volatility, and impact estimators.
+- `bot/models/` – Avellaneda–Stoikov quoting and Hawkes process placeholder.
+- `bot/mm/` – market-maker core loop coordinating risk, quoting, and execution.
+- `bot/hedge/` – delta hedge policy + TWAP executor.
+- `bot/basis/` – funding/basis capture state machine.
+- `bot/exec/` – routing and execution schedules (SOR/TWAP/VWAP).
+- `bot/connectors/` – CCXT wrapper with paper simulator and DEX stub interface.
+- `bot/risk/` – inventory/drawdown limits, kill-switch, orphan reaper.
+- `bot/cli/` – CLI entrypoints for market making and backtesting.
+- `tests/` – unit, property-based, and e2e (paper mode) tests.
+
+## Metrics & Observability
+
+`MetricsService` exposes:
+
+- `pnl_realized`, `pnl_unrealized`
+- `inventory`
+- `spread_target`
+- `fill_rate`
+- `hedge_notional`
+- `funding_accrual`
+- `error_rate`
+
+Scrape the `/metrics` endpoint via Prometheus. `/health` returns a basic status document.
 
 ## Safety Notes
 
-- Never load real secrets into the repo; configure via environment variables.
-- Start in paper mode and monitor metrics on the Prometheus endpoint.
-- Kill switch and orphan reaper protect against stale orders and connectivity loss. Repeated exceptions within the quoting loop trigger the kill switch and halt quoting automatically.
+- Always begin in paper mode. Verify fills, inventory, and hedging behaviour before switching to
+  live trading.
+- Provide API keys through environment variables only; never commit credentials to source control.
+- The kill switch trips on repeated errors and cancels open orders. The orphan reaper sweeps stale
+  orders if websocket desyncs occur.
+- Funding/basis capture is optional and capped; review risk parameters carefully.
 
 ## Known Limitations
 
-- DEX connectors are stubs for illustration.
-- Execution models are simplified but structured for extension.
-- Backtest fills approximate exchange microstructure; validate before production.
+- DEX connectors are illustrative stubs; integrate venue-specific signing and settlement before
+  production deployment.
+- Market impact and queue-position models are simplified. Extend with venue-specific order book
+  models for production alpha.
+- Backtesting uses synthetic data loaders; plug in your historical L2/trade archives for realistic
+  fills.
 
 ## Testing
 
@@ -95,9 +149,7 @@ poetry run bot-backtest --config configs/default.yaml --mode vectorized
 poetry run pytest
 ```
 
-## Metrics & Observability
-
-A FastAPI service exposes `/health` and `/metrics` for Prometheus scraping.
+CI can be enabled via GitHub Actions using the provided workflow (runs linting, typing, tests).
 
 ## License
 

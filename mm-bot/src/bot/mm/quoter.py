@@ -1,39 +1,55 @@
-"""Market making quote engine."""
-
 from __future__ import annotations
 
 import asyncio
 import logging
-import math
 from dataclasses import dataclass, field
 from typing import Dict, Optional, Protocol
 
 from ..connectors.cex_ccxt import ExchangeConnector, OrderState
-from ..core.types import Order, OrderBookSnapshot, Side, Trade
+from ..core.config import SymbolConfig
+from ..core.types import Fill, Order, OrderBookSnapshot, Side, Trade
 from ..core.utils import jitter_sleep
 from ..data.feeds import InMemoryFeedStore
 from ..data.storage import StorageBackend
+from ..hedge.hedger import Hedger
 from ..models.avellaneda_stoikov import AvellanedaStoikovModel, QuoteResult
+from ..risk.kill_switch import KillSwitch
 from ..risk.limits import RiskLimits
 from ..risk.orphan_reaper import OrphanReaper
-from ..risk.kill_switch import KillSwitch
+from ..signals.impact import ImpactEstimator
 from ..signals.microstructure import MicrostructureSignals
 from ..signals.volatility import VolatilityEstimator
-from ..signals.impact import ImpactEstimator
-from ..hedge.hedger import Hedger
 
 
 class MetricsRecorder(Protocol):
-    def record(self, symbol: str, inventory: float, pnl: float, spread: float) -> None:  # pragma: no cover - interface
+    def record(
+        self,
+        symbol: str,
+        *,
+        inventory: float,
+        pnl_realized: float,
+        pnl_unrealized: float,
+        spread: float,
+        fill_rate: float,
+    ) -> None:  # pragma: no cover - interface
         ...
 
 
 @dataclass
 class SymbolState:
     inventory: float = 0.0
-    pnl: float = 0.0
+    inventory_cost: float = 0.0
+    pnl_realized: float = 0.0
     last_quote: Optional[QuoteResult] = None
-    open_orders: Dict[Side, OrderState] = field(default_factory=dict)
+    open_orders: Dict[str, OrderState] = field(default_factory=dict)
+    posted_notional_ema: float = 1e-6
+    filled_notional_ema: float = 1e-6
+
+    def unrealized(self, mid: float) -> float:
+        return self.inventory * mid - self.inventory_cost
+
+    def fill_rate(self) -> float:
+        return self.filled_notional_ema / max(self.posted_notional_ema, 1e-6)
 
 
 class Quoter:
@@ -50,10 +66,8 @@ class Quoter:
         orphan: OrphanReaper,
         storage: StorageBackend,
         refresh: float,
-        lot_size: float,
-        tick_size: float,
+        symbol_config: SymbolConfig,
         venue: str,
-        symbol: str,
         metrics: Optional[MetricsRecorder] = None,
         kill_switch: Optional[KillSwitch] = None,
     ) -> None:
@@ -68,16 +82,19 @@ class Quoter:
         self._orphan = orphan
         self._storage = storage
         self._refresh = refresh
-        self._lot_size = lot_size
-        self._tick_size = tick_size
         self._venue = venue
-        self._symbol = symbol
+        self._symbol = symbol_config.name
         self._state = SymbolState()
         self._running = False
         self._metrics = metrics
         self._kill_switch = kill_switch
-        self._logger = logging.getLogger(f"Quoter[{symbol}]")
-        self._connector.register_symbol(symbol)
+        self._logger = logging.getLogger(f"Quoter[{self._symbol}]")
+        self._post_only = symbol_config.post_only
+        self._lot_size = symbol_config.lot_size
+        self._tick_size = symbol_config.tick_size
+        self._maker_fee = symbol_config.maker_fee_bps / 10_000.0
+        self._taker_fee = symbol_config.taker_fee_bps / 10_000.0
+        self._connector.register_symbol(symbol_config.name)
 
     async def start(self) -> None:
         self._running = True
@@ -127,7 +144,12 @@ class Quoter:
                     self._risk.update_inventory(self._symbol, self._state.inventory)
                     if self._metrics:
                         self._metrics.record(
-                            self._symbol, self._state.inventory, self._state.pnl, quote.spread
+                            self._symbol,
+                            inventory=self._state.inventory,
+                            pnl_realized=self._state.pnl_realized,
+                            pnl_unrealized=self._state.unrealized(snapshot.mid),
+                            spread=quote.spread,
+                            fill_rate=self._state.fill_rate(),
                         )
                         self._metrics.hedge_notional = getattr(self._hedger, "last_notional", 0.0)
                     await self._orphan.sweep()
@@ -144,28 +166,38 @@ class Quoter:
         self._running = False
 
     async def _replace_orders(self, quote: QuoteResult) -> None:
-        open_orders = await self._connector.list_open_orders(symbol=self._symbol)
+        raw_orders = await self._connector.list_open_orders(symbol=self._symbol)
+        current_orders: Dict[str, OrderState] = {}
+        orders_by_side: Dict[Side, OrderState] = {}
+        for state in raw_orders:
+            if state.order.order_id is None:
+                continue
+            current_orders[state.order.order_id] = state
+            orders_by_side[state.order.side] = state
+        self._state.open_orders = current_orders
+        risk_orders = {
+            order_id: abs(order_state.order.price * order_state.remaining)
+            for order_id, order_state in current_orders.items()
+        }
+        self._risk.sync_orders(self._symbol, risk_orders)
+
         desired_prices = {Side.BUY: quote.bid, Side.SELL: quote.ask}
-        active_sides: Dict[Side, OrderState] = {}
-        for state in open_orders:
-            target = desired_prices[state.order.side]
-            if math.isclose(state.order.price, target, abs_tol=self._tick_size / 2):
-                active_sides[state.order.side] = state
+        for side, target_price in desired_prices.items():
+            existing = orders_by_side.get(side)
+            if existing and abs(existing.order.price - target_price) <= self._tick_size / 2:
                 continue
-            if state.order.order_id:
-                await self._connector.cancel_order(state.order.order_id, symbol=self._symbol)
+            if existing and existing.order.order_id:
+                await self._connector.cancel_order(existing.order.order_id, symbol=self._symbol)
                 self._risk.record_cancel(self._symbol)
-        self._state.open_orders = active_sides
-        for side, price in desired_prices.items():
-            if side in active_sides:
-                continue
+                self._risk.remove_order(existing.order.order_id, self._symbol)
+                self._state.open_orders.pop(existing.order.order_id, None)
             order = Order(
                 venue=self._venue,
                 symbol=self._symbol,
                 side=side,
-                price=price,
+                price=target_price,
                 size=self._lot_size,
-                post_only=True,
+                post_only=self._post_only,
             )
             if not self._risk.check_order(order):
                 continue
@@ -180,17 +212,29 @@ class Quoter:
                 order_id=order_id,
                 post_only=order.post_only,
             )
-            self._state.open_orders[side] = OrderState(order=order_with_id, remaining=order.size)
+            state = OrderState(order=order_with_id, remaining=order.size)
+            self._state.open_orders[order_id] = state
+            self._risk.register_order(order_id, order_with_id)
+            notional = abs(order.price * order.size)
+            self._state.posted_notional_ema = 0.9 * self._state.posted_notional_ema + 0.1 * notional
 
     async def _drain_fills(self, snapshot: OrderBookSnapshot) -> None:
         while True:
             fill = await self._connector.poll_fill()
             if fill is None:
                 break
-            pnl_delta = (snapshot.mid - fill.price) * (fill.size if fill.side == Side.SELL else -fill.size)
-            self._state.pnl += pnl_delta - fill.fee
-            self._state.inventory += fill.size if fill.side == Side.BUY else -fill.size
-            self._risk.record_fill(fill, snapshot.mid, pnl_delta - fill.fee)
+            realized = self._apply_fill(fill)
+            if fill.fee != 0:
+                fee = abs(fill.fee)
+            else:
+                fee_rate = self._maker_fee if fill.order_id in self._state.open_orders else self._taker_fee
+                fee = max(fee_rate, 0.0) * abs(fill.price * fill.size)
+            realized -= fee
+            self._state.pnl_realized += realized
+            self._state.filled_notional_ema = 0.9 * self._state.filled_notional_ema + 0.1 * abs(
+                fill.price * fill.size
+            )
+            self._risk.record_fill(fill, snapshot.mid, realized)
             await self._storage.record_trade(
                 Trade(
                     venue=fill.venue,
@@ -201,9 +245,52 @@ class Quoter:
                     side=fill.side,
                 )
             )
+            if fill.order_id:
+                self._risk.remove_order(fill.order_id, fill.symbol)
+                self._state.open_orders.pop(fill.order_id, None)
+
+    def _apply_fill(self, fill: Fill) -> float:
+        state = self._state
+        inventory_before = state.inventory
+        cost_before = state.inventory_cost
+        avg_cost = cost_before / inventory_before if abs(inventory_before) > 1e-9 else 0.0
+        realized = 0.0
+        if fill.side == Side.BUY:
+            inventory_after = inventory_before + fill.size
+            if inventory_before < 0:
+                closing = min(fill.size, abs(inventory_before))
+                realized += (avg_cost - fill.price) * closing
+                remaining = inventory_after
+                if remaining < 0:
+                    state.inventory_cost = avg_cost * remaining
+                else:
+                    residual = fill.size - closing
+                    state.inventory_cost = residual * fill.price
+            else:
+                state.inventory_cost = cost_before + fill.price * fill.size
+        else:
+            inventory_after = inventory_before - fill.size
+            if inventory_before > 0:
+                closing = min(fill.size, inventory_before)
+                realized += (fill.price - avg_cost) * closing
+                remaining = inventory_after
+                if remaining > 0:
+                    state.inventory_cost = avg_cost * remaining
+                else:
+                    residual = fill.size - closing
+                    state.inventory_cost = -residual * fill.price
+            else:
+                state.inventory_cost = cost_before - fill.price * fill.size
+        state.inventory = inventory_after
+        if abs(state.inventory) < 1e-9:
+            state.inventory = 0.0
+            state.inventory_cost = 0.0
+        return realized
 
     async def _cancel_all(self) -> None:
         orders = await self._connector.list_open_orders(symbol=self._symbol)
         for state in orders:
             if state.order.order_id:
                 await self._connector.cancel_order(state.order.order_id, symbol=self._symbol)
+                self._risk.remove_order(state.order.order_id, state.order.symbol)
+        self._state.open_orders.clear()
