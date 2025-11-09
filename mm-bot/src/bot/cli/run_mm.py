@@ -50,7 +50,7 @@ async def _run(config_path: Path, paper: bool) -> None:
     last_trade_price: Dict[str, float] = {}
 
     storage = await create_storage(config.storage.backend, config.storage.dsn)
-    venues = load_venues_config(config.venues_config)
+    venues = load_venues_config(config.venues_path())
     connectors: Dict[str, ExchangeConnector] = {}
 
     for venue_name in {symbol_cfg.venue for symbol_cfg in config.symbols}:
