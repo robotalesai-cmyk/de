@@ -21,8 +21,10 @@ if importlib.util.find_spec("uvicorn") is not None:
 @dataclass
 class SymbolMetrics:
     inventory: float = 0.0
-    pnl: float = 0.0
+    pnl_realized: float = 0.0
+    pnl_unrealized: float = 0.0
     spread: float = 0.0
+    fill_rate: float = 0.0
 
 
 @dataclass
@@ -32,24 +34,46 @@ class MetricsCollector:
     error_rate: float = 0.0
     _symbols: Dict[str, SymbolMetrics] = field(default_factory=dict)
 
-    def record(self, symbol: str, inventory: float, pnl: float, spread: float) -> None:
+    def record(
+        self,
+        symbol: str,
+        *,
+        inventory: float,
+        pnl_realized: float,
+        pnl_unrealized: float,
+        spread: float,
+        fill_rate: float,
+    ) -> None:
         metrics = self._symbols.setdefault(symbol, SymbolMetrics())
         metrics.inventory = inventory
-        metrics.pnl = pnl
+        metrics.pnl_realized = pnl_realized
+        metrics.pnl_unrealized = pnl_unrealized
         metrics.spread = spread
+        metrics.fill_rate = fill_rate
 
     def prometheus(self) -> str:
         lines = [
             "# HELP pnl_realized Realized PnL",
             "# TYPE pnl_realized gauge",
+            "# HELP pnl_unrealized Unrealized PnL",
+            "# TYPE pnl_unrealized gauge",
+            "# HELP inventory Net inventory per symbol",
+            "# TYPE inventory gauge",
+            "# HELP spread_target Target quoting spread",
+            "# TYPE spread_target gauge",
+            "# HELP fill_rate Maker order fill ratio",
+            "# TYPE fill_rate gauge",
         ]
         for symbol, metrics in self._symbols.items():
-            lines.append(f'pnl_realized{{symbol="{symbol}"}} {metrics.pnl}')
-            lines.append(f'inventory{{symbol="{symbol}"}} {metrics.inventory}')
-            lines.append(f'spread_target{{symbol="{symbol}"}} {metrics.spread}')
-        lines.append(f'funding_accrual {self.funding_accrual}')
-        lines.append(f'hedge_notional {self.hedge_notional}')
-        lines.append(f'error_rate {self.error_rate}')
+            labels = f'symbol="{symbol}"'
+            lines.append(f"pnl_realized{{{labels}}} {metrics.pnl_realized}")
+            lines.append(f"pnl_unrealized{{{labels}}} {metrics.pnl_unrealized}")
+            lines.append(f"inventory{{{labels}}} {metrics.inventory}")
+            lines.append(f"spread_target{{{labels}}} {metrics.spread}")
+            lines.append(f"fill_rate{{{labels}}} {metrics.fill_rate}")
+        lines.append(f"funding_accrual {self.funding_accrual}")
+        lines.append(f"hedge_notional {self.hedge_notional}")
+        lines.append(f"error_rate {self.error_rate}")
         return "\n".join(lines) + "\n"
 
 

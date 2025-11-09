@@ -22,7 +22,6 @@ click = "^8.1.7"
 prometheus-client = "^0.20.0"
 fastapi = "^0.111.0"
 uvicorn = "^0.29.0"
-asyncio = "^3.4.3"
 scipy = "^1.13.1"
 statsmodels = "^0.14.2"
 clickhouse-connect = { version = "^0.7.9", optional = true }
@@ -55,7 +54,8 @@ target-version = ["py311"]
 
 [tool.ruff]
 line-length = 100
-select = ["E", "F", "I", "N", "UP", "B", "SIM", "ANN"]
+select = ["E", "F", "I", "N", "UP", "B", "SIM", "ANN", "C4", "TID"]
+target-version = "py311"
 
 [tool.mypy]
 python_version = "3.11"

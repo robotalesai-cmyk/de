@@ -4,6 +4,7 @@ import asyncio
 import pathlib
 
 from bot.connectors.cex_ccxt import ExchangeConnector
+from bot.core.config import SymbolConfig
 from bot.core.events import EventBus
 from bot.core.metrics import MetricsCollector
 from bot.core.types import OrderBookSnapshot, Trade
@@ -49,13 +50,46 @@ async def _run_paper_mode(tmp_path: pathlib.Path) -> None:
     feed_task = asyncio.create_task(feed.run(store))
 
     model = AvellanedaStoikovModel(gamma=0.1, horizon=10, kappa=1.0, min_spread=0.1, skew_alpha=0.0)
+    symbol_cfg = SymbolConfig(
+        name="BTC-PERP",
+        venue="kucoin",
+        tick_size=0.1,
+        lot_size=0.01,
+        max_order_notional=10000.0,
+        account_notional_cap=20000.0,
+        max_position=1.0,
+        hedge_ratio=1.0,
+        basis_capture=True,
+        maker_fee_bps=-1.0,
+        taker_fee_bps=5.0,
+        post_only=True,
+        allow_taker=True,
+        max_orders=5,
+    )
     risk = RiskLimits(
-        {"BTC-PERP": SymbolLimits(max_position=1.0, max_order_notional=10000.0)},
+        {
+            symbol_cfg.name: SymbolLimits(
+                max_position=symbol_cfg.max_position,
+                max_order_notional=symbol_cfg.max_order_notional,
+                account_notional_cap=symbol_cfg.account_notional_cap,
+                max_orders=symbol_cfg.max_orders,
+            )
+        },
         max_drawdown=10_000.0,
         max_daily_loss=5_000.0,
         max_inventory_notional=20_000.0,
+        max_open_orders=10,
     )
-    hedge = Hedger(connector, HedgePolicy(enabled=True, threshold=0.1, max_notional=1000.0))
+    hedge = Hedger(
+        connector,
+        HedgePolicy(
+            enabled=True,
+            threshold=0.1,
+            max_notional=1000.0,
+            hedge_ratio=1.0,
+            cooldown_seconds=0.1,
+        ),
+    )
     orphan = OrphanReaper(connector)
     quoter = Quoter(
         store=store,
@@ -69,10 +103,8 @@ async def _run_paper_mode(tmp_path: pathlib.Path) -> None:
         orphan=orphan,
         storage=storage,
         refresh=0.2,
-        lot_size=0.01,
-        tick_size=0.1,
+        symbol_config=symbol_cfg,
         venue="kucoin",
-        symbol="BTC-PERP",
         metrics=collector,
     )
     quoter_task = asyncio.create_task(quoter.start())

@@ -12,7 +12,7 @@ import click
 
 from ..basis.funding import FundingCapture, FundingPolicy
 from ..connectors.cex_ccxt import ExchangeConnector
-from ..core.config import StrategyConfig, load_venues_config
+from ..core.config import StrategyConfig
 from ..core.events import EventBus
 from ..core.metrics import MetricsCollector, MetricsService
 from ..core.utils import load_exchange_credentials
@@ -50,8 +50,9 @@ async def _run(config_path: Path, paper: bool) -> None:
     last_trade_price: Dict[str, float] = {}
 
     storage = await create_storage(config.storage.backend, config.storage.dsn)
-    venues = load_venues_config(config.venues_config)
+    venues = config.load_venues()
     connectors: Dict[str, ExchangeConnector] = {}
+    symbol_map = {symbol_cfg.name: symbol_cfg for symbol_cfg in config.symbols}
 
     for venue_name in {symbol_cfg.venue for symbol_cfg in config.symbols}:
         venue_info = venues.get(venue_name)
@@ -71,6 +72,7 @@ async def _run(config_path: Path, paper: bool) -> None:
         FundingPolicy(
             enabled=config.basis.enabled,
             max_notional=config.basis.max_notional,
+            target_notional=config.basis.target_notional,
             threshold=config.basis.funding_threshold,
         )
     )
@@ -80,6 +82,8 @@ async def _run(config_path: Path, paper: bool) -> None:
             symbol_cfg.name: SymbolLimits(
                 max_position=symbol_cfg.max_position,
                 max_order_notional=symbol_cfg.max_order_notional,
+                account_notional_cap=symbol_cfg.account_notional_cap,
+                max_orders=symbol_cfg.max_orders,
                 max_cancels_per_minute=symbol_cfg.max_cancels_per_minute,
             )
             for symbol_cfg in config.symbols
@@ -87,6 +91,7 @@ async def _run(config_path: Path, paper: bool) -> None:
         max_drawdown=config.risk.max_drawdown,
         max_daily_loss=config.risk.max_daily_loss,
         max_inventory_notional=config.risk.max_inventory_notional,
+        max_open_orders=config.risk.max_open_orders,
     )
 
     stop_event = asyncio.Event()
@@ -101,6 +106,10 @@ async def _run(config_path: Path, paper: bool) -> None:
     async def handle_snapshot(snapshot) -> None:
         micro.update_snapshot(snapshot)
         vol.update(snapshot)
+        symbol_cfg = symbol_map.get(snapshot.symbol)
+        if symbol_cfg:
+            funding.observe_snapshot(snapshot.symbol, snapshot, symbol_cfg.basis_capture)
+            collector.funding_accrual = funding.accrual()
 
     async def handle_trade(trade) -> None:
         micro.update_trade(trade)
@@ -109,7 +118,6 @@ async def _run(config_path: Path, paper: bool) -> None:
             price_return = (trade.price - prev) / prev
             impact.update(trade, price_return)
         last_trade_price[trade.symbol] = trade.price
-        collector.funding_accrual = funding.accrual()
 
     await bus.subscribe(SNAPSHOT_TOPIC, handle_snapshot)
     await bus.subscribe(TRADE_TOPIC, handle_trade)
@@ -143,6 +151,8 @@ async def _run(config_path: Path, paper: bool) -> None:
                 enabled=config.hedge.enabled,
                 threshold=config.hedge.rebalance_threshold,
                 max_notional=config.hedge.max_notional,
+                hedge_ratio=config.hedge.hedge_ratio * symbol_cfg.hedge_ratio,
+                cooldown_seconds=config.hedge.cooldown_seconds,
             ),
         )
         orphan = OrphanReaper(connector)
@@ -158,10 +168,8 @@ async def _run(config_path: Path, paper: bool) -> None:
             orphan=orphan,
             storage=storage,
             refresh=config.quote.refresh_seconds,
-            lot_size=symbol_cfg.lot_size,
-            tick_size=symbol_cfg.tick_size,
+            symbol_config=symbol_cfg,
             venue=symbol_cfg.venue,
-            symbol=symbol_cfg.name,
             metrics=collector,
             kill_switch=kill_switch,
         )

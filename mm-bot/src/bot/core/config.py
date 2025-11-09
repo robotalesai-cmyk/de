@@ -17,9 +17,15 @@ class SymbolConfig(BaseModel):
     tick_size: float = Field(..., gt=0)
     lot_size: float = Field(..., gt=0)
     max_order_notional: float = Field(..., gt=0)
+    account_notional_cap: float = Field(..., gt=0)
     max_position: float = Field(..., ge=0)
     hedge_ratio: float = Field(1.0, ge=0)
     basis_capture: bool = False
+    maker_fee_bps: float = Field(0.0)
+    taker_fee_bps: float = Field(0.0)
+    post_only: bool = True
+    allow_taker: bool = True
+    max_orders: int = Field(10, ge=1)
     max_cancels_per_minute: Optional[int] = None
 
 
@@ -27,6 +33,7 @@ class RiskConfig(BaseModel):
     max_drawdown: float = Field(..., gt=0)
     max_daily_loss: float = Field(..., gt=0)
     max_inventory_notional: float = Field(..., gt=0)
+    max_open_orders: int = Field(100, ge=1)
     kill_switch_threshold: int = Field(3, ge=1)
 
 
@@ -57,12 +64,15 @@ class HedgeConfig(BaseModel):
     enabled: bool = True
     rebalance_threshold: float = Field(0.05, ge=0)
     max_notional: float = Field(..., gt=0)
+    hedge_ratio: float = Field(1.0, ge=0)
     mode: str = Field("perp")
+    cooldown_seconds: float = Field(1.0, ge=0)
 
 
 class BasisConfig(BaseModel):
     enabled: bool = False
     max_notional: float = Field(0.0, ge=0)
+    target_notional: float = Field(0.0, ge=0)
     funding_threshold: float = Field(0.0, ge=0)
 
 
@@ -100,12 +110,11 @@ class StrategyConfig(BaseModel):
         config._base_path = cfg_path.parent.resolve()
         return config
 
-    def load_venues(self) -> Dict[str, Any]:
+    def load_venues(self) -> "Venues":
         venues_path = Path(self.venues_config)
         if not venues_path.is_absolute():
             venues_path = (self._base_path / venues_path).resolve()
-        with venues_path.open("r", encoding="utf-8") as handle:
-            return yaml.safe_load(handle)
+        return load_venues_config(venues_path)
 
 
 class VenueRateLimit(BaseModel):

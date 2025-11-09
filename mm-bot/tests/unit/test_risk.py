@@ -9,10 +9,18 @@ from bot.risk.limits import RiskLimits, SymbolLimits
 
 def test_risk_limits_blocks_excess_inventory() -> None:
     limits = RiskLimits(
-        {"BTC": SymbolLimits(max_position=1.0, max_order_notional=1000.0)},
+        {
+            "BTC": SymbolLimits(
+                max_position=1.0,
+                max_order_notional=1000.0,
+                account_notional_cap=2000.0,
+                max_orders=5,
+            )
+        },
         max_drawdown=100.0,
         max_daily_loss=100.0,
         max_inventory_notional=1000.0,
+        max_open_orders=10,
     )
     limits.update_inventory("BTC", 0.9)
     order = Order(venue="v", symbol="BTC", side=Side.BUY, price=100.0, size=0.2)

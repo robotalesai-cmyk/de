@@ -4,19 +4,35 @@ symbols:
     tick_size: 0.5
     lot_size: 0.001
     max_order_notional: 5000
+    account_notional_cap: 15000
     max_position: 0.5
     hedge_ratio: 1.0
     basis_capture: true
+    maker_fee_bps: -1.0
+    taker_fee_bps: 4.0
+    post_only: true
+    allow_taker: false
+    max_orders: 6
+    max_cancels_per_minute: 120
   - name: BTC-USDT
     venue: kucoin
     tick_size: 0.01
     lot_size: 0.001
     max_order_notional: 5000
+    account_notional_cap: 15000
     max_position: 0.5
+    hedge_ratio: 0.0
+    basis_capture: false
+    maker_fee_bps: -1.0
+    taker_fee_bps: 6.0
+    post_only: true
+    allow_taker: true
+    max_orders: 4
 risk:
   max_drawdown: 0.05
   max_daily_loss: 0.02
   max_inventory_notional: 10000
+  max_open_orders: 20
   kill_switch_threshold: 5
 latency_budget_ms: 300
 quote:
@@ -35,10 +51,13 @@ hedge:
   enabled: true
   rebalance_threshold: 0.05
   max_notional: 10000
+  hedge_ratio: 1.0
   mode: perp
+  cooldown_seconds: 2.0
 basis:
   enabled: true
   max_notional: 5000
+  target_notional: 2000
   funding_threshold: 0.0005
 venues_config: configs/venues.yaml
 storage:

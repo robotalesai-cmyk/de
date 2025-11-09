@@ -41,13 +41,22 @@ def test_strategy_config_loads_relative_venues(tmp_path):
                     "tick_size": 0.5,
                     "lot_size": 0.001,
                     "max_order_notional": 1000,
+                    "account_notional_cap": 2000,
                     "max_position": 1.0,
+                    "hedge_ratio": 1.0,
+                    "basis_capture": False,
+                    "maker_fee_bps": -1.0,
+                    "taker_fee_bps": 5.0,
+                    "post_only": True,
+                    "allow_taker": True,
+                    "max_orders": 5,
                 }
             ],
             "risk": {
                 "max_drawdown": 0.05,
                 "max_daily_loss": 0.02,
                 "max_inventory_notional": 1000,
+                "max_open_orders": 10,
                 "kill_switch_threshold": 3,
             },
             "latency_budget_ms": 200,
@@ -64,9 +73,16 @@ def test_strategy_config_loads_relative_venues(tmp_path):
                 "enabled": True,
                 "rebalance_threshold": 0.05,
                 "max_notional": 1000,
+                "hedge_ratio": 1.0,
                 "mode": "perp",
+                "cooldown_seconds": 1.0,
             },
-            "basis": {"enabled": False, "max_notional": 0.0, "funding_threshold": 0.0},
+            "basis": {
+                "enabled": False,
+                "max_notional": 0.0,
+                "target_notional": 0.0,
+                "funding_threshold": 0.0,
+            },
             "venues_config": venues_path.name,
             "storage": {"backend": "sqlite", "dsn": "sqlite:///tmp.db"},
             "metrics": {"host": "127.0.0.1", "port": 9010},
@@ -76,4 +92,4 @@ def test_strategy_config_loads_relative_venues(tmp_path):
 
     config = StrategyConfig.load(config_path)
     venues = config.load_venues()
-    assert venues["test-venue"]["rest_base"] == "https://api.test"
+    assert venues.get("test-venue").rest_base == "https://api.test"
