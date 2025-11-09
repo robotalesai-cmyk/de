@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import yaml
-from pydantic import BaseModel, Field, PrivateAttr, validator
+from pydantic import BaseModel, Field, PrivateAttr, RootModel, validator
 
 
 class SymbolConfig(BaseModel):
@@ -95,17 +95,26 @@ class StrategyConfig(BaseModel):
     def load(cls, path: str | Path) -> "StrategyConfig":
         cfg_path = Path(path)
         with cfg_path.open("r", encoding="utf-8") as handle:
-            data: Dict[str, Any] = yaml.safe_load(handle)
+            contents = handle.read()
+        data: Dict[str, Any] = yaml.safe_load(contents)
         config = cls.model_validate(data)
         config._base_path = cfg_path.parent.resolve()
         return config
 
+    def _resolve_path(self, value: str | Path) -> Path:
+        path = Path(value)
+        if not path.is_absolute():
+            path = (self._base_path / path).resolve()
+        return path
+
+    def venues_path(self) -> Path:
+        return self._resolve_path(self.venues_config)
+
     def load_venues(self) -> Dict[str, Any]:
-        venues_path = Path(self.venues_config)
-        if not venues_path.is_absolute():
-            venues_path = (self._base_path / venues_path).resolve()
+        venues_path = self.venues_path()
         with venues_path.open("r", encoding="utf-8") as handle:
-            return yaml.safe_load(handle)
+            contents = handle.read()
+        return yaml.safe_load(contents)
 
 
 class VenueRateLimit(BaseModel):
@@ -123,17 +132,16 @@ class VenueConfig(BaseModel):
     funding_endpoint: Optional[str] = None
 
 
-class Venues(BaseModel):
-    __root__: Dict[str, VenueConfig]
-
+class Venues(RootModel[Dict[str, VenueConfig]]):
     def get(self, venue: str) -> VenueConfig:
         try:
-            return self.__root__[venue]
+            return self.root[venue]
         except KeyError as exc:
             raise KeyError(f"Unknown venue: {venue}") from exc
 
 
 def load_venues_config(path: str | Path) -> Venues:
     with Path(path).open("r", encoding="utf-8") as handle:
-        data = yaml.safe_load(handle)
-    return Venues.model_validate({"__root__": data})
+        contents = handle.read()
+    data = yaml.safe_load(contents)
+    return Venues.model_validate(data)

@@ -30,6 +30,16 @@ This repository contains a production-ready template for a cross-venue crypto ma
 
 ## Quickstart
 
+### Ready-to-use quickstart
+
+Spin up a fully configured paper-trading bot (and generate editable config files under `~/.mm-bot/`) with a single command:
+
+```bash
+poetry run bot-quickstart
+```
+
+The command copies `configs/default.yaml` and `configs/venues.yaml` to `~/.mm-bot/`, drops a `.env` template next to them, validates the configuration, and immediately launches the bot in paper mode. To create the files without starting the runtime, pass `--init-only`. Toggle live trading with `--live` after filling in your API keys inside `~/.mm-bot/.env`.
+
 ### Local development
 
 ```bash
